@@ -2,8 +2,11 @@
 #include <string.h>
 #include <stdlib.h>
 #include <netinet/in.h>
+#include <iostream>
 #include "exceptions.h"
 #include "message.h"
+
+using namespace std;
 
 bool DEBUG_MESSAGES = false;
 

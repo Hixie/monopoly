@@ -95,7 +95,7 @@ int Property::GetHouseCost(int& houses, // in: number of houses to buy; out: num
 }
 
 void Property::AddHouses(int& houses, // in: number of houses to buy; out: actual number of houses used
-                         int& hotels  // in: number of houses to buy; out: actual number of hotels used
+                         int& hotels  // in: number of hotels to buy; out: actual number of hotels used
                          ) // returns nothing
 {
   houses -= 4*hotels;

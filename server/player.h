@@ -4,10 +4,13 @@ class Player;
 #define INCLUDED_PLAYER_H
 
 #include <list>
+#include <cstring>
 #include "board.h"
 #include "card.h"
 #include "property.h"
 #include "square.h"
+
+using namespace std;
 
 class Player { // this class is also used for Observers, actually
  public:
@@ -55,7 +58,7 @@ class Player { // this class is also used for Observers, actually
 
   bool VoteForKick(); // returns false if already voted this round
 
-  bool AuctionStarted(Property* property) { mBidding = true; }
+  void AuctionStarted(Property* property) { mBidding = true; }
   bool GetBidding() { return mBidding; }
   // Bid() and NoBid() return true if the state changed
   bool Bid() { bool bidding = mBidding; mBidding = true; return !bidding; }

@@ -225,6 +225,7 @@ StreetRepairsCard::StreetRepairsCard(Board* board, int id, std::list<Card*>* pil
 
 void StreetRepairsCard::Handle(Player* player, Square* square, int diceTotal)
 {
+  Card::Handle(player, square, diceTotal);
   int price = player->GetNumHouses() * mHouses + player->GetNumHotels() * mHotels;
   mBoard->ChargePlayer(player, square, price);
 }

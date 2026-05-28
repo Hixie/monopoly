@@ -2,6 +2,9 @@
 #define INCLUDED_EXCEPTIONS_H
 
 #include <stdexcept>
+#include <string>
+
+using namespace std;
 
 #define Exception(className, parentName) \
   class className : public parentName { \

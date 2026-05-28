@@ -3,7 +3,8 @@
 #include <vector>
 #include <arpa/inet.h>
 #include <fcntl.h>
-#include <iostream.h>
+#include <iostream>
+#include <string>
 #include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -309,7 +310,7 @@ void DataConnection::SendAndDelete(Message* message) {
 
 void Listener::Receive() {
   struct sockaddr_in address;
-  size_t sizeOfAddress = sizeof(address);
+  socklen_t sizeOfAddress = sizeof(address);
   // accept the incoming connection
   fd descriptor = accept(mDescriptor, (struct sockaddr *)&address, &sizeOfAddress);
   if (descriptor == -1) {
@@ -587,9 +588,9 @@ Message* Network::GetMessage() {
         try {
           (*i)->Receive();
         } catch (NetworkDisconnectedError) {
-          std::list<Connection*>::iterator deleteI = i;
-          --i;
-          RemoveConnection(*deleteI); // this should result in the connection being deleted
+          std::list<Connection*>::iterator next = std::next(i);
+          RemoveConnection(*i);
+          i = std::prev(next);
           mPendingMessageQueue.push_back(NULL);
         }
       }

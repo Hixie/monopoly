@@ -1,5 +1,6 @@
 
-#include <iostream.h>
+#include <iostream>
+#include <string>
 #include "board.h"
 #include "message.h"
 #include "network.h"

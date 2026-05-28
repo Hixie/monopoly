@@ -1,5 +1,6 @@
 
-#include <iostream.h>
+#include <iostream>
+#include <string>
 #include "board.h"
 #include "card.h"
 #include "player.h"
@@ -92,7 +93,7 @@ void CardSquare::LandedOn(Player* player, bool forwards, int diceTotal)
 void CardSquare::Dispatch(Player* player, Message* message)
 {
   if (!mLastCard)
-    Square::Dispatch(player, message);
+    return Square::Dispatch(player, message);
   mLastCard->Dispatch(player, this, message);
 }
 

@@ -3,6 +3,7 @@
 #include <vector>
 #include <algorithm>
 #include <functional>
+#include <iostream>
 #include "stdlib.h" // for abs()
 #include "limits.h" // for UINT_MAX 
 #include "card.h"
@@ -13,6 +14,8 @@
 #include "exceptions.h"
 #include "message.h"
 #include "board.h"
+
+using namespace std;
 
 #define CARD_JAIL1 0
 
@@ -87,7 +90,8 @@ Board::Board():mAvailableHouses(TOTAL_HOUSES_AVAILABLE),
   while (id < NUM_PROPERTIES) {
     skipComments(dataFile);
     dataFile >> type >> land >> house >> mortgage >> rent[0] >> rent[1] >> rent[2] >> rent[3] >> rent[4] >> rent[5] >> groupid;
-    mProperties[id++] = new Property(id-1, type, land, house, mortgage, rent, groupid);
+    mProperties[id] = new Property(id, type, land, house, mortgage, rent, groupid);
+    ++id;
   }
 
   // The board
@@ -211,7 +215,7 @@ Board::Board():mAvailableHouses(TOTAL_HOUSES_AVAILABLE),
   dataFile >> flag;
   mBankruptcyTransfersToPlayer = flag == 0;
 
-  success |= !!dataFile; // convert to boolean
+  success &= !!dataFile; // convert to boolean
 
   // regardless of any errors, make sure to close the file
   dataFile.close();
@@ -775,16 +779,17 @@ void Board::Transfer(Player* from, Player* to)
 
   // tell transactions
   std::list<Transaction*>::iterator t;
-  for (t = mTransactions.begin(); t != mTransactions.end(); ++t) {
+  for (t = mTransactions.begin(); t != mTransactions.end(); ) {
     if (!(*t)->GetEnded()) {
       (*t)->TransferNotification(from, to);
       if ((*t)->GetEnded()) {
-        std::list<Transaction*>::iterator endedTransaction = t++;
-        Transaction* transaction = (*endedTransaction);
-        mTransactions.erase(endedTransaction);
+        Transaction* transaction = *t;
+        t = mTransactions.erase(t);
         delete transaction;
+        continue;
       }
     }
+    ++t;
   }
 
   // transfer estate
@@ -809,13 +814,14 @@ void Board::Transfer(Player* from, Player* to)
 
   // tell claims
   std::list<Claim*>::iterator c;
-  for (c = mClaims.begin(); c != mClaims.end(); ++c) {
+  for (c = mClaims.begin(); c != mClaims.end(); ) {
     if (!(*c)->TransferNotification(from, to)) {
-      std::list<Claim*>::iterator obsoleteClaim = c++;
-      Claim* claim = (*obsoleteClaim);
-      mClaims.erase(obsoleteClaim);
+      Claim* claim = *c;
+      c = mClaims.erase(c);
       delete claim;
+      continue;
     }
+    ++c;
   }
 
   if (mCurrentPlayer == from) {
@@ -853,7 +859,7 @@ void Board::Transfer(Player* from, Player* to)
   }
 }
 
-void Board::Transfer(Player* from, Player* to, int amount, int transactionID = INT_MAX)
+void Board::Transfer(Player* from, Player* to, int amount, int transactionID)
 {
   if ((amount == 0) || (from == to))
     return;
@@ -896,7 +902,7 @@ void Board::Transfer(Player* from, Player* to, int amount, int transactionID = I
     (*i)->TransferNotification(from, to, amount);
 }
 
-void Board::Transfer(Player* from, Player* to, Property* property, bool immuneToFees = false)
+void Board::Transfer(Player* from, Player* to, Property* property, bool immuneToFees)
 {
   if ((!property) || (from == to))
     return;
@@ -919,12 +925,14 @@ void Board::Transfer(Player* from, Player* to, Property* property, bool immuneTo
   int houses = -property->GetNumHouses();
   int hotels = -property->GetNumHotels();
   if (!immuneToFees && (houses != 0 || hotels != 0)) {
-    houses = houses + 4 * hotels;
     if (to != BANK) {
-      int cash = -property->GetHouseCost(houses, hotels);
+      int tempHouses = houses;
+      int tempHotels = hotels;
+      int cash = -property->GetHouseCost(tempHouses, tempHotels); // we ignore the mutated values
       Broadcast(PIMP_DESTRUCTION_GIVES_CASH_FACTORY(to->GetID(), cash));
       Transfer(BANK, to, cash); // XXX should propagate transaction id from bankruptcy to here
     }
+    houses = houses + 4 * hotels; // cancels the offset done by AddHouses below
     property->AddHouses(houses, hotels);
     mAvailableHouses -= houses;
     mAvailableHotels -= hotels;

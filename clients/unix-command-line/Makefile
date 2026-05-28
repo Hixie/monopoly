@@ -1,3 +1,4 @@
+CXXFLAGS = -g -fpermissive -std=c++03 -w
 
 CXXSRCS = \
 	network.cpp \

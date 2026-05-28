@@ -1,5 +1,5 @@
 
-#include <iostream.h>
+#include <iostream>
 #include <termios.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -1064,7 +1064,7 @@ int main()
         PIMP_DELTA_CARD_CAST(message, details);
         cout << "Card " << (int)details->GetField3()
              << " just went from player " << (int)details->GetField1()
-             << " to player " << (int)details->GetField1() << "." << endl;
+             << " to player " << (int)details->GetField2() << "." << endl;
         end;
       }
       case PIMP_DELTA_HOUSES_PURCHASED: {

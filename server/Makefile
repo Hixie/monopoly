@@ -31,4 +31,4 @@ message.h: message-factories.h.inc
 message-factories.cpp.inc: message-factories.h.inc
 
 message-factories.h.inc: message-factories.pl ../pimp-design.txt
-	perl message-factories.pl
+	/usr/bin/perl message-factories.pl

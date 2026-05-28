@@ -110,7 +110,7 @@ class MessageUnsignedIntString : public MessageUnsignedInt {
   MessageUnsignedIntString(int player, uint8 type, unsigned int field1, char* field2);
   MessageUnsignedIntString(int player);
   MessageUnsignedIntString(MessageUnsignedIntString* message);
-  MessageUnsignedIntString::~MessageUnsignedIntString();
+  ~MessageUnsignedIntString();
   Message* Copy() { return new MessageUnsignedIntString(this); }
   char* GetField2() { return strdup(mField2); }
   void SetField2(char* field2) { free(mField2); mField2 = strdup(field2); }
@@ -145,7 +145,7 @@ class MessageByteBoolString : public MessageByteBool {
   MessageByteBoolString(int player, uint8 type, uint8 field1, bool field2, char* field3);
   MessageByteBoolString(int player);
   MessageByteBoolString(MessageByteBoolString* message);
-  MessageByteBoolString::~MessageByteBoolString();
+  ~MessageByteBoolString();
   Message* Copy() { return new MessageByteBoolString(this); }
   char* GetField3() { return strdup(mField3); }
   void SetField3(char* field3) { free(mField3); mField3 = strdup(field3); }
@@ -197,7 +197,7 @@ class MessageByteByteString : public MessageByteByte {
   MessageByteByteString(int player, uint8 type, uint8 field1, uint8 field2, char* field3);
   MessageByteByteString(int player);
   MessageByteByteString(MessageByteByteString* message);
-  MessageByteByteString::~MessageByteByteString();
+  ~MessageByteByteString();
   Message* Copy() { return new MessageByteByteString(this); }
   char* GetField3() { return strdup(mField3); }
   void SetField3(char* field3) { free(mField3); mField3 = strdup(field3); }
@@ -449,7 +449,7 @@ Message* MessageByteByteStringByteUnsignedIntByteFactory(int player, uint8 type,
 Message* MessageByteByteStringByteUnsignedIntByteDecoder(int player, MessageBuffer buffer, int length);
 
 
-// C function pointer syntax is retarded
+// C function pointer syntax is idiotic
 // define a typedef to make it less cumbersome
 typedef Message* (*MessageFactoryPointer) (int, MessageBuffer, int);
 

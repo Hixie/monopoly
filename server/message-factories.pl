@@ -88,7 +88,7 @@ class Message@typeNames : public Message@superclassNames {
   Message@typeNames(int player);
   Message@typeNames(Message@typeNames* message);";
     if ($fieldName eq 'String') {
-        $classes .= "\n  Message@{typeNames}::~Message@typeNames();";
+        $classes .= "\n  ~Message@typeNames();";
     }
     $classes .= "
   Message* Copy() { return new Message@typeNames(this); }
@@ -112,8 +112,8 @@ class Message@typeNames : public Message@superclassNames {
  private:
   $fieldType mField$fieldNumber;
 };
-Message* Message@typeNames\Factory(int player, uint8 type@arguments);
-Message* Message@typeNames\Decoder(int player, MessageBuffer buffer, int length);
+Message* Message@{typeNames}Factory(int player, uint8 type@arguments);
+Message* Message@{typeNames}Decoder(int player, MessageBuffer buffer, int length);
 ";
 
 ##################################### DEFINITIONS #######################################
@@ -270,11 +270,11 @@ uint8 Message@{typeNames}::SerializePayload(MessageBuffer buffer) {
     ################### FACTORIES #####################
     $definitions .= "}
 
-Message* Message@typeNames\Factory(int player, uint8 type@arguments) {
+Message* Message@{typeNames}Factory(int player, uint8 type@arguments) {
   return new Message@typeNames(player, type@argumentNames);
 };
 
-Message* Message@typeNames\Decoder(int player, MessageBuffer buffer, int length) {
+Message* Message@{typeNames}Decoder(int player, MessageBuffer buffer, int length) {
   Message* message = new Message@typeNames(player);
   message->Parse(buffer, length);
   return message;
@@ -333,7 +333,7 @@ print OUT1 " // THIS FILE IS AUTO-GENERATED: DO NOT EDIT
 #include <string.h>
 $classes
 
-// C function pointer syntax is retarded
+// C function pointer syntax is idiotic
 // define a typedef to make it less cumbersome
 typedef Message* (*MessageFactoryPointer) (int, MessageBuffer, int);
 

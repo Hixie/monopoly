@@ -6,6 +6,7 @@ class Pot;
 
 #include <vector>
 #include <stdexcept>
+#include <climits>
 #include "player.h"
 #include "property.h"
 #include "card.h"

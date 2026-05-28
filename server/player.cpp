@@ -2,10 +2,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <list>
+#include <iostream>
 #include "player.h"
 #include "board.h"
 #include "math.h"
-#include "iostream.h"
 
 Player::Player(Board* board,int id, int piece, char* name, Square* square) :
   mBoard(board),
