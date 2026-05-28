@@ -1,0 +1,5 @@
+
+# The script
+<files launch>
+   SetHandler cgi-script
+</files>

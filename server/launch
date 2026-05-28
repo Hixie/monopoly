@@ -1,0 +1,70 @@
+#!/usr/bin/perl -wT
+use strict;
+use CGI;
+
+delete @ENV{'IFS', 'CDPATH', 'ENV', 'BASH_ENV', 'PATH'};
+
+# nohup ./monopoly &
+
+sub U($) { # untaint a number
+    my $value = shift;
+    if (not defined $value) { return 0; }
+    $value =~ m/^([0-9]+)$/os;
+    return $1 || 0;
+}
+
+# collect data from user
+my $query = CGI->new();
+my $port = U $query->param('port');
+my $opt1 = U $query->param('opt1');
+my $opt2 = U $query->param('opt2');
+my $opt3 = U $query->param('opt3');
+my $opt4 = U $query->param('opt4');
+my $opt = ((((0+$opt1) | (0+$opt2)) | (0+$opt3)) | (0+$opt4));
+
+if ($port) {
+    print <<end;
+Status: 200 OK
+Content-Type: text/plain
+
+/usr/bin/nohup /home/ianh/other/monopoly/game/server/monopoly $port $opt
+end
+
+    print "\x{2550}" x 72 . "\n";
+
+    # redirect all to stdout
+    open(STDERR, ">&STDOUT");
+    select(STDERR); $| = 1;     # make unbuffered
+    select(STDOUT); $| = 1;     # make unbuffered
+
+    exec {'/usr/bin/nohup'} '/usr/bin/nohup', '/home/ianh/other/monopoly/game/server/monopoly', $port, $opt;
+} else {
+    print <<end;
+Content-Type: text/html;charset=utf-8
+
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0//EN">
+<html lang="en">
+ <head>
+  <title>Kaspar Launcher</title>
+  <style type="text/css">
+  </style>
+ </head>
+ <body>
+  <form action="launch" method="post" enctype="multipart/form-data">
+   <h1>Kaspar Launcher</h1>
+   <p> <label>Port: <input type="text" name="port" value="13220"></label> </p>
+   <p> <label><input type="checkbox" name="opt1" value="1" checked="checked"> Use Pot for tax money </label> </p>
+   <p> <label><input type="checkbox" name="opt2" value="2" checked="checked"> Need to pass Go to buy property </label> </p>
+   <p> <label><input type="checkbox" name="opt3" value="4" checked="checked"> Double Go money if you land on Go </label> </p>
+   <p> Bankruptcy transfers to: 
+    <label><input type="radio" name="opt4" value="0"> Player </label>
+    <label><input type="radio" name="opt4" value="8" checked="checked"> Bank </label>
+   </p>
+   <p>
+    <input type="submit" value="Launch">
+   </p>
+  </form>
+ </body>
+</html>
+end
+}

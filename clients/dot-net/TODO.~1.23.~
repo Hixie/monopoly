@@ -1,0 +1,26 @@
+BUGS
+ observers should come off the list when they disconnect
+
+FUTURED BUGS
+ XP widgets
+ kicking someone who owes money should make the owees get their money
+ fix the log window so it doesn't do the stupid scrolling shit
+ afk players' votes still count (so voting then going AFK can swing a vote)
+ default to the amount even when you can't pay it
+ votes should only include players
+ add a way to automatically transfer everything on a rent payment
+ doesn't send START_OF_TURN if switch to player when only one player
+ need space below timer and above rent payment button
+ don't remove the quickview cards when quitting
+ context menu for quickview cards
+ context menu shouldn't appear for middle of board
+ make the fonts be dependent on the parent form font
+ make the list of place names and the currency sign configurable (chance cards should use placeholders)
+ on rejoin, stop the player piece appearing on go first.
+ remove Rotate Board context menu item
+ scrollbar for control panels in sidebar
+ showing a list of who is out of the bidding
+ the columns need slightly resizing when adding a scrollbar to listviews
+ a control to turn the card over temporarily in property card view
+ use hyperlinks for things like "has been offered property xyz"
+ make the game players start in a random order

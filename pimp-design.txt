@@ -1,0 +1,947 @@
+PIMP: the Portable Internet Monopoly Protocol
+=============================================
+
+S->A = Server to All clients
+S->C = Server to Client
+C->S = Client to Server
+X->X = Either Client to Server or Server to Client
+
+Player ID 0 is reserved for the server, leaving a maximum of 255
+players and observers.
+
+Note: This protocol assumes certain house rules.
+
+Code Ranges
+-----------
+                                            
+0x00 -- 0x0F   Joining game                 
+0x10 -- 0x1F   Status of game               
+0x20 -- 0x2F   Turn messages                
+0x30 -- 0x3F   Property manipulation        
+0x40 -- 0x4F   Messages from squares        
+0x50 -- 0x5F   Trade: starting              
+0x60 -- 0x6F   Trade: setting up            
+0x70 -- 0x7F   Trade: concluding            
+0x90 -- 0x9F   House construction (including errors)
+0x80 -- 0x8F   Informative Cash and Card Changes
+0xC0 -- 0xCF   Ownership and other changes  
+0xD0 -- 0xDF   Leaving game                 
+0xE0 -- 0xEF   Client Errors                
+0xF0 -- 0xFE   Errors                       
+
+Message type 0xFF and payload length 255 are reserved for future use.
+
+
+Reading the Contents column
+---------------------------
+
+The fields are the X, Y, Z, W, Q, and N values respectively. Byte
+fields usually come first, the player comes first if it is one of the
+fields. (One message, PIMP_STATE_PLAYER, has an unusally large number
+of fields and does not follow the bytes-first rule.)
+
+bool fields are stored in a byte with the least significant bit
+containing the value.
+
+string fields consist of a length byte, then that many bytes of UTF-8
+encoded characters. (The length byte is the number of bytes, not the
+number of characters. Note that UTF-8 is a varying multibyte
+encoding.)
+
+Errors                                                                          CODE CONTENTS
+------                                                                          ==== ========
+
+PIMP_ERROR_UNEXPECTED_MESSAGE                                                   0xFE byte
+X->X: Unexpected message type X
+      Sent when the message that was received is either not expected
+      to be sent by that end (e.g. the server sending a handshake
+      message) or not expected at that time (e.g. the client saying
+      "I'd like to play" out of the blue).
+
+PIMP_ERROR_UNPARSEABLE                                                          0xFD
+X->X: Unparseable message
+      Sent when the message payload is of an unexpected length.
+
+PIMP_ERROR_INVALID_PAYLOAD                                                      0xFC byte
+X->X: Invalid payload in message of type X
+      May be sent when the message payload contained an ID (player,
+      piece, property, card, square, etc) that wasn't valid.
+
+
+Handshake
+---------
+
+PIMP_HANDSHAKE                                                                  0x00 byte
+C->S: Hi, do you speak PIMP version X?
+      This can be sent at any time, in order to switch to a higher
+      level protocol (if there is one).
+      The current version is version 1. There is no version 0.
+
+PIMP_HANDSHAKE_ACKNOWLEDGE                                                      0x01 4 byte unsigned integer
+S->C: Hi, yes. We are playing game X.
+      The game number must be non-zero.
+
+PIMP_ERROR_UNKNOWN_PROTOCOL                                                     0xF0
+S->C: Nope, sorry, I don't speak that protocol.
+
+
+Joining the game
+----------------
+
+PIMP_JOIN                                                                       0x02 byte, bool, string (max length 32)
+C->S: I prefer piece X, I'd like to play/observe: Y, my name is Z
+
+PIMP_QUERY_JOIN_PLAY                                                            0x06 4 byte unsigned integer, string
+PIMP_QUERY_JOIN_OBSERVE                                                         0x07 4 byte unsigned integer, string
+S=>A: Candidate X with name Y has requested to join/observe, accept?
+      As of version 1 of the protocol, the server must only ever have
+      one of these queries active at any one time.
+
+PIMP_JOIN_PENDING                                                               0x10
+S->C: Hang on, people are voting
+
+PIMP_ACCEPT_JOIN                                                                0x08 4 byte unsigned integer
+C->S: Accept candidate X
+      Invalid X values are ignored.
+
+PIMP_REFUSE_JOIN                                                                0x09 4 byte unsigned integer
+C->S: Refuse candidate X
+      Invalid X values are ignored.
+
+PIMP_JOIN_REFUSED                                                               0x0F 4 byte unsigned integer, string
+S->A: Candidate X, name Y, was refused
+
+PIMP_ERROR_TOO_MANY_USERS                                                       0xF1
+S->C: Too many users already, sorry
+
+PIMP_ERROR_NAME_IN_USE                                                          0xF2
+S->C: Name already in use, pick another
+      This is also used if the name is inappropriate.
+
+PIMP_ERROR_NOT_WELCOME                                                          0xF3
+S->C: You are not welcome.
+
+PIMP_WELCOME_DETAILS                                                            0x03 byte, 4 byte unsigned integer
+S->C: You now are player Y, password Z
+      Sent instead of 0xF3 in case players accepted. The password is
+      the number used to reauthenticate a connection when reconnecting.
+
+PIMP_WELCOME_PLAYER                                                             0x04 byte, byte, string
+S->A: Welcome player X, piece Y, name Z
+      Implies that player X has a new piece at square 0.
+      This will be followed by game state sent to the player.
+
+PIMP_WELCOME_OBSERVER                                                           0x05 byte, byte, string
+S->A: Welcome observer X, piece Y, name Z
+      This will be followed by game state sent to the observer.
+
+
+PIMP_REJOIN                                                                     0x0A byte, 4 byte unsigned integer
+C->S: I am already in the game as player X, my password was Y
+
+PIMP_WELCOME_BACK                                                               0x0B byte, byte, string, bool
+S->C: Welcome back; for the record you are player X, piece Y, name Z, you are playing/observing: W
+      This will be followed by game state.
+      W is true if playing.
+
+PIMP_ERROR_WRONG_PASSWORD                                                       0xF4
+S->C: The provided password is incorrect.
+      This can either be replied to by another PIMP_REJOIN, or it can
+      be followed by a normal PIMP_JOIN message.
+
+
+Link Dead
+---------
+
+PIMP_PING                                                                       0xD0 4 byte unsigned integer
+S->C: Ping? X
+
+PIMP_PONG                                                                       0xD1 4 byte unsigned integer
+C->S: Pong: X
+
+PIMP_LINK_DEAD                                                                  0xD2 byte
+S=>A: Player X has stopped responding
+      Sent if a player times out. Doesn't do anything else though.
+
+
+Changing Status
+---------------
+
+PIMP_KICK                                                                       0xD3 byte
+C->S: Kick player X
+      Only has an effect if it is that player's turn
+      Kick count gets reset when the turn ends
+
+PIMP_PLAYER_BECAME_OBSERVER_KICKED                                              0xDC byte
+S->A: Majority of players wanted player X kicked
+      Actual resource transfers take place with separate messages.
+      Player is made into an observer.
+
+PIMP_TRANSFER                                                                   0xD4 byte
+C->S: Transfer everything to player X
+      Actual resource transfers take place with separate messages.
+      Player 0 means transfer to the bank.
+
+PIMP_ERROR_CANNOT_TRANSFER_DURING_TRANSACTION                                   0xEC 4 byte unsigned integer
+S->C: You must complete transaction X before transfering
+      If X is zero, then the transaction is merely a pending claim.
+      The player need but wait until the next person rolls.
+      (PIMP_RENT_COLLECTION_MORATORIUM will be sent then.)
+
+PIMP_PLAYER_TAKEOVER                                                            0x0C byte, byte
+S->A: Player X is becoming an active player taking over the piece who
+      was player Y
+      The sequence of events will be
+         PIMP_TRANSFER
+         PIMP_PLAYER_TAKEOVER
+         PIMP_DELTA_*
+         PIMP_PLAYER_BECAME_OBSERVER_TRANSFER
+      Implies that player X has the piece player Y had.
+
+PIMP_AFK                                                                        0xD5
+S->A: I'm away from the keyboard
+      This tells the server to ignore this player when it comes to
+      votes. Any other message sent from the client will cancel this
+      notice (including PIMP_PONG!). This won't stop the player from
+      having to play his turn. The server may use this message as
+      indication that the player is link dead and send the LINK_DEAD
+      message but doesn't need to. This message does not excuse the
+      client from any outstanding PIMP_QUERY_JOIN_PLAY/OBSERVE
+      messages. Typically followed by the client disconnecting.
+
+PIMP_SWITCH_PLAY                                                                0x0D
+C->S: I'd like to play
+      Runs through the 0x06, 0x08, 0x09, 0x0F thing with the players,
+      but if successful responds to everyone with 0x0E instead of 0x03
+      to the requester and 0x04 to everyone.
+      Only one candidate per connection at a time is allowed, more
+      such messages are silently ignored.
+
+PIMP_OBSERVER_BECAME_PLAYER                                                     0x0E byte
+S->A: Player X is becoming an active player
+      Implies that player X has a new piece at square 0.
+
+PIMP_PLAYER_BECAME_OBSERVER_TRANSFER                                            0xDA byte
+S->A: Player X is becoming an observer
+      Result of PIMP_TRANSFER, usually paired with
+      PIMP_PLAYER_TAKEOVER unless other player is bank.
+
+PIMP_PLAYER_BECAME_OBSERVER_BANKRUPT                                            0xDB byte
+S->A: Player X bankrupt, now become an observer
+      Results from PIMP_BANKRUPT_TRANSACTION.
+
+PIMP_PLAYER_WON                                                                 0xDF byte
+S->A: Player X wins
+      Sent whenever only one person is left in the player state, if
+      the last person to leave went bankrupt. (Thus, always and only
+      sent after a "Player bankrupt" message.)
+      May be followed by the server disconnecting.
+
+
+Status
+------
+
+Upon joining, or upon request, the server can give the client an exact
+report of what is going on (in no particular order):
+
+PIMP_REQUEST_STATE                                                              0x11
+C->S: Remind me, what's going on exactly?
+
+PIMP_STATE_BOARD                                                                0x12 byte
+S->C: We are playing on board X
+      This message indicates the start of a state dump.
+
+PIMP_STATE_PLAYER                                                               0x13 byte, byte, string, byte, 4 byte unsigned integer, byte
+S->C: User X is a player with piece Y, named Z, on square W with cash Q,
+      in jail for the Nth turn
+      N=0 if not in jail
+
+PIMP_STATE_OBSERVER                                                             0x14 byte, byte, string
+S->C: User X is an observer who prefers piece Y and is named Z
+
+PIMP_STATE_PROPERTY                                                             0x15 byte, byte, bool, byte, byte
+S->C: Property X is owned by Y and is Z mortgaged with W houses, Q hotels
+     (repeated for each owned property)
+
+PIMP_STATE_CARD                                                                 0x16 byte, byte
+S->C: Card X is owned by Y (repeated for each owned card)
+
+PIMP_STATE_POT                                                                  0x1F 4 byte unsigned integer
+S->C: The pot is at X
+      This message indicates the end of the state dump.
+
+Then, the required set of messages marked "S=>" are sent to the client
+to get it quickly to the current state. (The PIMP_QUERY_JOIN_*
+messages can be send before the PIMP_STATE_* messages, if that is more
+convenient, since they are not dependent on the game state.)
+
+
+Playing
+-------
+
+PIMP_START_OF_TURN                                                              0x20 byte, bool
+S=>A: It's now the turn of player X, throw dice if Y
+      Y is a boolean. If false, player is probably in jail. Further
+      instructions will be forthcoming.
+
+PIMP_THROW_DICE                                                                 0x21
+C->S: Throw dice
+      Also causes server to send PIMP_RENT_COLLECTION_MORATORIUM if
+      appropriate.
+
+PIMP_DICE_ROLLED                                                                0x22 byte, byte, byte
+S->A: Player X rolled Y and Z
+      Note that this is also sent when rolling to get out of jail.
+
+PIMP_THREE_DOUBLES                                                              0x23 byte (player)
+S->A: Player X rolled three doubles
+
+PIMP_DICE_MOVED_PLAYER                                                          0x24 byte, byte, byte
+S->A: Player X is moving to square Y due to dice roll totalling Z
+      Any bonuses for passing squares, such as Go, will be done
+      before the target square bonuses. Z will be zero if the
+      destination is jail because of three doubles.
+
+PIMP_CARD_MOVED_PLAYER                                                          0x25 byte (player), byte, byte
+S->A: Card Y is sending player X to square Z
+
+PIMP_SQUARE_MOVED_PLAYER                                                        0x26 byte (player), byte, byte
+S->A: Square Y is sending player X to square Z
+
+PIMP_PLAYER_PASSING_BY_SQUARE                                                   0x27 byte, byte
+S->A: Player X is moving past square Y
+      This is purely informative, for clients that want to animate the
+      moving person interleaved with the messages from passed squares,
+      e.g. Go collection. This message is sent immediately prior to
+      entering the square. It is not sent for the last square, the
+      next message is instead.
+
+PIMP_PLAYER_LANDING_ON_SQUARE                                                   0x28 byte, byte
+S->A: Player X is landing on square Y
+      Sent instead of PIMP_PLAYER_PASSING_BY_SQUARE for the last
+      square.
+
+PIMP_GOING_TO_JAIL                                                              0x29 byte, byte
+S->A: Player X is going to jail on square Y
+      Sent after PIMP_THREE_DOUBLES / PIMP_DICE_MOVED_PLAYER,
+      PIMP_GOT_CARD / PIMP_CARD_MOVED_PLAYER, or
+      PIMP_PLAYER_LANDING_ON_SQUARE / PIMP_SQUARE_MOVED_PLAYER. Will
+      be immediately followed by another PIMP_PLAYER_LANDING_ON_SQUARE
+      message.
+
+PIMP_WAITING_FOR_TRANSACTION                                                    0x2A byte, 4 byte unsigned integer
+S=>A: Player X is involved in transaction Y that is holding up the game
+
+PIMP_CLAIM_RENT                                                                 0x2B byte, byte
+C->S: Request payment from player X for landing on property Y
+      You have to send this once per time the player landed on it.
+
+PIMP_ERROR_INVALID_RENT_CLAIM                                                   0xE0
+S->C: You are not owed rent
+
+PIMP_CLAIM_GO                                                                   0x2C byte
+C->S: Request payment from bank for passing square X
+      This needs to be claimed once per time you passed/landed on it.
+
+PIMP_ERROR_INVALID_GO_CLAIM                                                     0xE1
+S->C: You are not owed salary
+
+PIMP_MONEY_BEING_HELD_IN_ESCROW                                                 0xED byte, 4 byte unsigned integer, 4 byte unsigned integer
+S->C: The bank will give player X Z cash once they finish transaction Y
+
+PIMP_RENT_COLLECTION_MORATORIUM                                                 0x2E
+S->A: Beyond this stage, rent and go money can no longer be claimed
+
+PIMP_ROLL_AGAIN                                                                 0x2F byte
+S->A: Player X needs to roll again
+
+
+Interactions with the Bank
+--------------------------
+
+PIMP_PROPERTY_SALE                                                              0x30 byte (player), byte, 4 byte unsigned integer
+S=>A: Property Y available for sale to player X for cash Z
+
+PIMP_BUY_PROPERTY                                                               0x31
+C->S: Buy
+      The cash and property and transferred in a separate message.
+
+PIMP_ERROR_PROPERTY_TOO_EXPENSIVE                                               0xE2 byte, 4 byte unsigned integer
+S->C: You can't afford to buy property X, it costs Y
+
+PIMP_ERROR_PROPERTY_WOULD_REDUCE_NET_WORTH                                      0xEE byte, 4 byte unsigned integer
+S->C: You can't buy property X, it would reduce your net worth to below
+      what you need in transaction Y
+
+PIMP_AUCTION_PROPERTY                                                           0x32
+C->S: Don't buy
+
+PIMP_PROPERTY_AUCTION                                                           0x33 byte
+S=>A: Property X is now available for auction
+
+PIMP_BID                                                                        0x34 4 byte unsigned integer
+C->S: Bid X
+
+PIMP_PROPERTY_AUCTION_BID                                                       0x35 byte, 4 byte unsigned integer
+S=>A: Bid is up to player X cash Y
+
+PIMP_NO_BID                                                                     0x36
+C->S: Don't bid
+      Every player but the winning one must say "Don't bid" for the
+      auction to close. Even after saying Don't bid, though, a player
+      can bid again if the auction is not yet over.
+      Ignored if player has highest bid.
+
+PIMP_PROPERTY_AUCTION_NO_BID                                                    0x37 byte
+S=>A: Player X is out of the bidding
+
+PIMP_PROPERTY_AUCTION_WON                                                       0x38 byte
+S->A: Auction won by player X
+      The property and cash are transferred in a separate message.
+
+PIMP_PROPERTY_AUCTION_VOID                                                      0x39
+S->A: Nobody bid on the property.
+
+
+PIMP_PURCHASE_HOUSES                                                            0x90 byte = n, n times (byte, signed byte, signed byte)
+C->S: Buy/sell houses
+       Number of properties being changed: X
+       Property ID Y: buy Z houses, W hotels (repeated X times)
+      Must be sent before PIMP_THROW_DICE or PIMP_CHOICE (when in jail)
+
+PIMP_ERROR_HOUSES_NOT_OWNED                                                     0x91 byte
+S->C: You must own the properties to build houses, you do not own X
+
+PIMP_ERROR_HOUSES_NEED_MONOPOLY                                                 0x92 byte
+S->C: You must own all the properties to build houses, you do not own X
+
+PIMP_ERROR_HOUSES_MORTGAGED                                                     0x93 byte
+S->C: You cannot build on mortgaged properties (property X)
+
+PIMP_ERROR_HOUSES_NOT_COLOUR_GROUP                                              0x94 byte
+S->C: You cannot build on railroads or utilities (property X)
+
+PIMP_ERROR_HOUSES_NOT_YOUR_TURN                                                 0x95
+S->C: You cannot build when it is your turn
+
+PIMP_ERROR_HOUSES_TOO_EXPENSIVE                                                 0x96 4 byte unsigned integer
+S->C: You can't afford to buy those houses, it would cost X
+
+PIMP_ERROR_HOUSES_NO_HOUSE_PIECES_LEFT                                          0x97 byte, byte
+S->C: You can't build these houses or hotels, there aren't enough
+      pieces left (there are X houses, Y hotels)
+
+PIMP_ERROR_HOUSES_CANNOT_BUILD_THAT_NUMBER                                      0x98 byte
+S->C: You can't build that number of houses or hotels on X
+      Note that building a hotel requires building 4 houses too
+
+PIMP_ERROR_HOUSES_UNBALANCED                                                    0x99 byte
+S->C: You can't buy/sell those houses, it would cause the houses
+      to be unbalanced near property X
+
+PIMP_ERROR_HOUSES_WOULD_REDUCE_NET_WORTH                                        0x9A 4 byte unsigned integer
+S->C: Buying houses would decrease your net worth, which you can't do
+      while in transaction X
+
+PIMP_ERROR_HOUSES_TERMITES                                                      0x9B
+S->C: You failed to build the houses, the contruction materials were
+      teeming with termites
+
+PIMP_DELTA_HOUSES_PURCHASED                                                     0xC3 byte, byte, byte, byte
+S->A: Player X has bought or sold houses on property Y, it now has Z houses
+      and W hotels
+      The cash is transferred in a separate message.
+
+
+PIMP_MORTGAGE_PROPERTY                                                          0x3B byte
+C->S: Mortgage property X
+
+PIMP_DELTA_PROPERTY_MORTGAGED                                                   0xC5 byte
+S->A: Property X is now mortgaged
+      The cash is transferred in a separate message.
+
+PIMP_UNMORTGAGE_PROPERTY                                                        0x3C byte
+C->S: Unmortgage property X
+
+PIMP_DELTA_PROPERTY_UNMORTGAGED                                                 0xC6 byte
+S->A: Property X is no longer mortgaged
+      The cash is transferred in a separate message.
+
+PIMP_ERROR_MORTGAGE_TOO_EXPENSIVE                                               0xE3 byte, 4 byte unsigned integer
+S->C: You can't afford to unmortgage property X, it costs Y
+
+Note: There is no PIMP_ERROR_MORTGAGE_WOULD_REDUCE_NET_WORTH because
+we always want to allow unmortgaging. Unmortgaging is often done
+before a deal to avoid having to pay the fee twice.
+
+
+Squares and Tax and Stuff
+-------------------------
+
+PIMP_GOT_CARD                                                                   0x40 byte, byte, byte
+S=>A: Player X picked up chance card Z at square Y
+      This doesn't imply that a card (or cash) was received, only that
+      a card was picked up. If the card is kept by the player, or if
+      money changes hands, a state change will also be sent. Other
+      messages, e.g. PIMP_SQUARE_GIVES_CASH or PIMP_SQUARE_GIVES_CARD,
+      may also be sent with more specific details, although it again
+      is just informative.
+
+PIMP_CARD_COLLECT_OR_RETRY                                                      0x41 byte
+S=>A: Player X has to chose: collect cash or retry
+
+PIMP_CARD_SELECT_COLLECT                                                        0x42
+C->S: Collect money
+      Results in PIMP_SQUARE_GIVES_CASH
+
+PIMP_CARD_SELECT_RETRY                                                          0x43
+C->S: Retry
+      Results in PIMP_SQUARE_CARD again.
+
+
+PIMP_TAX_SELECT_OPTION                                                          0x45 byte, byte
+S=>A: Player X is on income tax Y, do you want to pay 10% or 200$?
+
+PIMP_TAX_PAY_TEN_PERCENT                                                        0x46
+C->S: Pay 10%
+
+PIMP_TAX_PAY_FLAT_FEE                                                           0x47
+C->S: Pay $200
+
+
+PIMP_JAIL_PAY_OR_ROLL                                                           0x4A byte, byte, bool
+S=>A: Player X is in jail, can roll for Y more turns, can buy houses? Z
+      Sent after PIMP_START_OF_TURN. If Y is non-zero, then player
+      should send one of the following two messages. Otherwise, player
+      must send back PIMP_JAIL_PAY_BAIL. (This is so that the server
+      knows when to declare a rent moratorium.)
+
+PIMP_JAIL_PAY_BAIL                                                              0x4B
+C->S: Pay bail
+      Results in PIMP_TRANSACTION_JAIL_REQUESTED.
+      Also causes server to send PIMP_RENT_COLLECTION_MORATORIUM if
+      appropriate.
+
+PIMP_JAIL_ROLL_DICE                                                             0x4C
+C->S: Roll the dice
+      Results in PIMP_DICE_ROLLED and JAIL_FREE, or on the last turn,
+      PIMP_TRANSACTION_JAIL_REQUESTED,
+      Also causes server to send PIMP_RENT_COLLECTION_MORATORIUM if
+      appropriate.
+
+PIMP_JAIL_FREE                                                                  0x4D byte
+S->A: Player X is leaving jail
+
+
+Transactions
+------------
+
+Transaction IDs start at 1 for the first one and are given out
+sequentially.
+
+Transaction have three steps:
+   set up
+   finished
+   agreed
+
+Each player is in one of these steps at any time. They both start in
+set up. They can each say they have finished, at which point they move
+up to finished. When they are both finished, they can each say they
+agree. Once they both reach agree, the deal is completed. At any
+point, either may reopen the deal (by either making a change, sending
+an explicit reopen request, or by changing what they own), which sends
+that player back to the set up stage, and sends the other player down
+to finished if they were at agreed before. At no time can one player
+be agreed and the other in set up.
+
+
+PIMP_TRANSACTION_REQUEST_TRADE                                                  0x50 byte
+C->S: Request trade with player X
+
+PIMP_TRANSACTION_TRADE_REQUESTED                                                0x51 4 byte unsigned integer, byte
+S=>C: Start cancellable transaction X with player Y
+      Sent to both players.
+
+PIMP_TRANSACTION_RENT_REQUESTED                                                 0x52 4 byte unsigned integer, byte, byte, byte, 4 byte unsigned integer
+S=>C: Start uncancellabled transaction X with player Y for landing on
+      property Z owned by player W with rent of Q
+      Sent to both players.
+
+PIMP_TRANSACTION_CARD_REQUESTED                                                 0x53 4 byte unsigned integer, byte, byte, byte, 4 byte unsigned integer
+S=>C: Start uncancellabled transaction X with player for card Z with
+      default payment of Q owed to player W.
+      Automatically sent to both players after a player gets an
+      appropriate card.
+
+PIMP_TRANSACTION_SQUARE_REQUESTED                                               0x54 4 byte unsigned integer, byte, 4 byte unsigned integer
+S=>C: Start uncancellabled transaction X with square Y, with required
+      payment of Z
+
+PIMP_TRANSACTION_BANK_REQUESTED                                                 0x55 4 byte unsigned integer, 4 byte unsigned integer
+S=>C: Start uncancellabled transaction X with bank for fixed amount Y
+      Cash defaults are set in separate messages (i.e. this message
+      will be followed up by PIMP_TRANSACTION_SET_CASH or
+      PIMP_ERROR_TRANSACTION_TOO_EXPENSIVE).
+
+PIMP_TRANSACTION_JAIL_REQUESTED                                                 0x56 4 byte unsigned integer, 4 byte unsigned integer
+S=>C: Start uncancellabled transaction X with bank for fixed amount Y
+      _or_ jail card
+      Cash defaults are set in separate messages (i.e. this message
+      will be followed up by PIMP_TRANSACTION_SET_CASH,
+      PIMP_ERROR_TRANSACTION_TOO_EXPENSIVE, PIMP_TRANSACTION_SET_CARD
+      or PIMP_ERROR_TRANSACTION_CARD_NOT_OWNED).
+
+
+PIMP_TRANSACTION_SET_CASH                                                       0x60 4 byte unsigned integer, 4 byte unsigned integer
+C->S: Set cash to Y in transaction X
+
+PIMP_ERROR_TRANSACTION_TOO_EXPENSIVE                                            0xE4 4 byte unsigned integer, 4 byte unsigned integer
+S->C: You can't afford Y in transaction X
+      The "This player" message is sent too, but with the old value.
+
+PIMP_TRANSACTION_CASH_SET                                                       0x61 4 byte unsigned integer, 4 byte unsigned integer
+S=>C: This player set cash to Y in transaction X
+      This gets sent whenever the value changes, as well as whenever
+      the user tries to change it but fails. It also gets sent when
+      the user's cash amount changes to less than the previous amount.
+
+PIMP_TRANSACTION_OTHER_CASH_SET                                                 0x62 4 byte unsigned integer, 4 byte unsigned integer
+S=>C: Other player set cash to Y in transaction X
+      This gets sent whenever the value changes.
+
+
+PIMP_TRANSACTION_ADD_PROPERTY                                                   0x63 4 byte unsigned integer, byte
+C->S: Add property Y to transaction X
+      If the property is already added, this does nothing.
+
+PIMP_ERROR_TRANSACTION_PROPERTY_NOT_OWNED                                       0xE5 4 byte unsigned integer, byte
+S->C: You don't own property Y in transaction X
+
+PIMP_TRANSACTION_REMOVE_PROPERTY                                                0x64 4 byte unsigned integer, byte
+C->S: Remove property Y from transaction X
+      Errors from this are ignored.
+
+PIMP_TRANSACTION_PROPERTY_ADDED                                                 0x65 4 byte unsigned integer, byte
+S=>C: This player added property Y to transaction X
+
+PIMP_TRANSACTION_PROPERTY_REMOVED                                               0x66 4 byte unsigned integer, byte
+S->C: This player removed property Y from transaction X
+      Also called when the property is lost in some other way.
+
+PIMP_TRANSACTION_OTHER_PROPERTY_ADDED                                           0x67 4 byte unsigned integer, byte
+S=>C: Other player added property Y to transaction X
+
+PIMP_TRANSACTION_OTHER_PROPERTY_REMOVED                                         0x68 4 byte unsigned integer, byte
+S->C: Other player removed property Y from transaction X
+
+
+PIMP_TRANSACTION_ADD_CARD                                                       0x69 4 byte unsigned integer, byte
+C->S: Add chance card Y to transaction X
+      If the card is already added, this does nothing.
+
+PIMP_ERROR_TRANSACTION_CARD_NOT_OWNED                                           0xE6 4 byte unsigned integer, byte
+S->C: You don't own card Y in transaction X
+
+PIMP_TRANSACTION_REMOVE_CARD                                                    0x6A 4 byte unsigned integer, byte
+C->S: Remove chance card Y to transaction X
+      Errors from this are ignored.
+
+PIMP_TRANSACTION_CARD_ADDED                                                     0x6B 4 byte unsigned integer, byte
+S=>C: This player added chance card Y to transaction X
+
+PIMP_TRANSACTION_CARD_REMOVED                                                   0x6C 4 byte unsigned integer, byte
+S->C: This player removed chance card Y from transaction X
+      Also called when the property is lost in some other way.
+
+PIMP_TRANSACTION_OTHER_CARD_ADDED                                               0x6D 4 byte unsigned integer, byte
+S=>C: Other player added chance card Y to transaction X
+
+PIMP_TRANSACTION_OTHER_CARD_REMOVED                                             0x6E 4 byte unsigned integer, byte
+S->C: Other player removed chance card Y from transaction X
+
+
+PIMP_TRANSACTION_FINISH                                                         0x70 4 byte unsigned integer
+C->S: Finished setting up transaction X
+
+PIMP_TRANSACTION_FINISHED                                                       0x71 4 byte unsigned integer
+S=>C: This player has finished setting up transaction X
+      Also sent if we were at the AGREED stage but other player
+      reopened.
+
+PIMP_TRANSACTION_OTHER_FINISHED                                                 0x72 4 byte unsigned integer
+S=>C: Other player has finished setting up transaction X
+      Also sent if other player was at the AGREED stage but we
+      reopened.
+
+PIMP_ERROR_TRANSACTION_NOT_SUITABLE                                             0xE7 4 byte unsigned integer, 4 byte unsigned integer
+S->C: Transaction X requires a payment of Y
+      The offered goods are not enough to satisfy the bank. This is
+      only sent for BANK, CARD and JAIL transactions. This is purely
+      informative and doesn't affect anything else.
+
+PIMP_TRANSACTION_REOPEN                                                         0x73 4 byte unsigned integer
+C->S: Reopen transaction X
+      Cancels any agreement. This message is also implied if any of
+      the messages in the range 0x60 to 0x6F are used.
+
+PIMP_TRANSACTION_REOPENED                                                       0x74 4 byte unsigned integer
+S=>C: This player has reopened transaction X
+      Triggered whenever the contents of a transaction are about to
+      change when the player has said he has either finished or
+      agreed, or if PIMP_TRANSACTION_REOPEN is sent. Local player is
+      sent back to the pre-FINISHED stage. Other player is also sent
+      back down to FINISHED if he had said he had AGREED.
+
+PIMP_TRANSACTION_OTHER_REOPENED                                                 0x75 4 byte unsigned integer
+S=>C: Other player has reopened transaction X
+      Triggered whenever the contents of a transaction are about to
+      change when the other player has said he has either finished or
+      agreed, or if PIMP_TRANSACTION_REOPEN is sent by the other
+      player. Other player is sent back to the pre-FINISHED stage.
+      Local player is sent down to FINISHED if he had AGREED.
+
+PIMP_TRANSACTION_AGREE                                                          0x76 4 byte unsigned integer
+C->S: Agreed to transaction X
+      Can only be sent once both users have finished setting up the
+      transaction.
+
+PIMP_ERROR_TRANSACTION_PROPERTY_HAS_HOUSE                                       0xE8 4 byte unsigned integer, byte
+S->C: Property Y in your transaction X has buildings on it; sell them
+      first
+      Sent instead of PIMP_TRANSACTION_AGREED, i.e. doesn't agree the
+      transaction.
+
+PIMP_ERROR_TRANSACTION_WOULD_REDUCE_NET_WORTH                                   0xE9 4 byte unsigned integer, 4 byte unsigned integer
+S->C: Transaction X cannot be sealed because it would reduce the 
+      net worth of the player to below the level required to pay
+      for transaction Y
+      This is purely informative and doesn't affect anything else.
+      Sent instead of PIMP_TRANSACTION_AGREED, i.e. doesn't agree the
+      transaction. It is only sent to the player in question.
+
+PIMP_TRANSACTION_AGREED                                                         0x77 4 byte unsigned integer
+S=>C: This player has agreed to transaction X
+
+PIMP_TRANSACTION_OTHER_AGREED                                                   0x78 4 byte unsigned integer
+S=>C: Other player has agreed to transaction X
+
+PIMP_TRANSACTION_FINALISED                                                      0x79 4 byte unsigned integer
+S->C: Transaction X finalised
+      Sent once both players agree. Followed by ownership changes.
+
+PIMP_BANKRUPT_TRANSACTION                                                       0x7A 4 byte unsigned integer
+C->S: Cannot satisfy uncancellabled transaction X: bankrupt
+      The server will only accept this if the player really doesn't
+      have enough money, including houses and property, and if the
+      player doesn't have any other outstanding transactions with
+      lower IDs.
+
+PIMP_ERROR_TRANSACTION_NOT_BANKRUPT                                             0xEA 4 byte unsigned integer, 4 byte unsigned integer
+S->C: You cannot claim bankrupty from transaction X, because of
+      transaction Y
+      If Y is zero, then it means the player has enough cash.
+
+PIMP_TRANSACTION_UNUSUAL                                                        0x7D 4 byte unsigned integer
+S=>C: This transaction is unusual
+      The transaction has been changed in some way that makes it
+      unusual. For example, the cash is not the expected cash.
+
+PIMP_TRANSACTION_CANCEL                                                         0x7E 4 byte unsigned integer
+C->S: Cancel transaction X.
+
+PIMP_TRANSACTION_CANCELLED                                                      0x7F 4 byte unsigned integer
+S->C: Transaction X cancelled.
+      Sent to both players. Also sent if one of the players goes
+      bankrupt or becomes an observer.
+
+PIMP_ERROR_TRANSACTION_CANNOT_BE_CANCELLED                                      0xEB 4 byte unsigned integer
+S->C: Transaction X cannot be cancelled.
+      Sent instead of PIMP_TRANSACTION_CANCELLED, i.e. doesn't cancel
+      the transaction.
+
+
+Informative Cash and Card Changes
+---------------------------------
+
+PIMP_SQUARE_GIVES_CASH                                                          0x80 byte (player), byte, 4 byte unsigned integer
+S->A: Square Y gives player X cash Z
+      This message is purely informative. The cash is transferred in a
+      separate message.
+
+PIMP_SQUARE_TAKES_CASH                                                          0x81 byte (player), byte, 4 byte unsigned integer
+S->A: Square Y takes from player X cash Z
+      This message is purely informative. The cash is transferred in a
+      separate message.
+
+PIMP_SQUARE_GIVES_CARD                                                          0x82 byte (player), byte, byte
+S->A: Square Y gives player X chance card Z
+      This message is purely informative. The card is transferred in a
+      separate message.
+
+PIMP_SQUARE_TAKES_CARD                                                          0x83 byte (player), byte, byte
+S->A: Square Y takes from player X card Z
+      This message is purely informative. The card is transferred in a
+      separate message.
+
+PIMP_CONSTRUCTION_TAKES_CASH                                                    0x84 byte (player), 4 byte unsigned integer
+S->A: Player X spends Y on houses
+      This message is purely informative. The cash is transferred in a
+      separate message.
+
+PIMP_DESTRUCTION_GIVES_CASH                                                     0x85 byte (player), 4 byte unsigned integer
+S->A: Player X received Y for selling houses
+      This message is purely informative. The cash is transferred in a
+      separate message.
+
+PIMP_PLAYER_CLAIMED_RENT                                                        0x86 byte (player), byte, byte, 4 byte unsigned integer
+S->A: Player X claimed rent from player Y for property Z casting Q
+      This message is purely informative. The cash is transferred in a
+      separate message.
+
+PIMP_PLAYER_CLAIMED_GO                                                          0x87 byte (player), byte, 4 byte unsigned integer
+S->A: Player X claimed salary for square Y, amount Z
+      This message is purely informative. The cash is transferred in a
+      separate message.
+
+
+Ownership Changes
+-----------------
+
+PIMP_DELTA_CASH                                                                 0xC0 byte, byte, 4 byte unsigned integer
+S->A: Cash Z has gone from player X to player Y
+      This is sent _whenever_ a player's cash amount changes.
+
+PIMP_DELTA_PROPERTY                                                             0xC1 byte (player), byte (player), byte
+S->A: Property Z has gone from player X to player Y
+
+PIMP_DELTA_CARD                                                                 0xC2 byte (player), byte (player), byte
+S->A: Card Z has gone from player X to player Y
+
+PIMP_DELTA_BANK                                                                 0xC4 byte, byte
+S->A: The bank has X houses and Y hotels
+
+PIMP_DELTA_POT                                                                  0xCF 4 byte unsigned integer
+S->A: Pot has changed to X
+
+
+Packet Design
+-------------
+
+All data is transmitted big endian (network byte order).
+
+It is expected that all PIMP connections be tunneled through SSL to
+prevent packet sniffing and packet spoofing.
+
+
+PIMP version 1 packets consist of a two byte header followed by a
+variable length payload. The first header byte is the message type,
+the second byte is the length of the payload.
+
+The payload may be empty (length zero). It may be longer than the
+length required by the message, up to a maximum of 254 bytes. Thus the
+longest possible packet is 256 bytes.
+
+Content Length value 255 is reserved for future use.
+
+   +-----------------+-----------------+--- - - -
+   | 0 0 0 0 0 0 0 0 | 0 0 0 0 0 0 0 0 | payload
+   +-----------------+-----------------+--- - - -
+            ^                 ^
+            |                 |
+            |                 +---- Payload length
+            |
+            +---------------------- Message Type ID
+
+
+SAMPLE CONNECTION
+
+Here are the first three messages of a PIMP connection.
+
+C->S: Hi, do you speak PIMP version X?
+
+   The length of the C->S handshake message payload is 1 byte (the
+   protocol version). The message type is 0, and the protocol version
+   is currently 1.
+
+   Therefore the handshake message is 0x00 0x01 0x01:
+
+     0x00: The message ID is 0.
+     0x01: The length of the message payload is 1.
+     0x01: The version number is 1.
+
+
+S->C: Hi, yes. We are playing game X.
+
+   This is replied to by the ack message from the server, which
+   contains a game ID, 4 bytes, e.g.: 0x01 0x04 0xA9 0x3F 0x91 0x0E.
+
+
+C->S: I prefer piece X, I'd like to play/observe: Y, my name is Z
+
+   The message ID, the length of the payload, the piece ID, the
+   boolean, the length of the string, and the string.
+
+   0x02 0x07 0x02 0x01 0x04 'k' 'e' 'r' 'z'
+
+
+Piece Designation
+-----------------
+
+The player with name "kerz" should always be identified by a car
+piece, and "pavlov" always by a donkey.
+
+Piece IDs are board dependent.
+
+
+Boards
+------
+
+BOARD 0
+
+The standard US Monopoly board.
+
+Squares:
+  0 = Go
+  10 = Jail
+  28 = Water Works
+  39 = Boardwalk
+
+Cards Types:
+  0x00 = Normal
+  0x01 = Get out of jail free
+
+Cards
+  0x00 = Go straight to go chance card (Type 0)
+  0x01 = Go straight to go community chest card (Type 0)
+  ...
+  0xFE = Get out of jail free chance card (Type 1)
+  0xFF = Get out of jail free community chest card (Type 1)
+
+Properties:
+  (In board order)
+
+Pieces:
+  0x00 = any
+  0x01 = Bag of money
+  0x02 = Battleship
+  0x03 = Cannon
+  0x04 = Dog
+  0x05 = Horse & Rider
+  0x06 = Iron
+  0x07 = Race Car
+  0x08 = Shoe
+  0x09 = Thimble
+  0x0A = Top Hat
+  0x0B = Wheelbarrow
+
+House Rules:
+  Tax goes to pot, collected on Free Parking (Square 20).
+  Go income double if you land on it.
+
+
+
+TODO
+----
+
+Need to add PIMP_STATE_HOUSES and PIMP_DELTA_HOUSES.
+Need to add PIMP_STATE_LAST_PLAYER
